@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PersistAnt | Simple Daily Progress</title>
+    <!-- Tailwind CSS for elegant, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f6f6f6',
+                            100: '#e7e7e7',
+                            900: '#111111',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        body {
+            background-color: #ffffff;
+            color: #111111;
+            -webkit-font-smoothing: antialiased;
+        }
+        /* Custom scrollbar for an elegant feel */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #fafafa; }
+        ::-webkit-scrollbar-thumb { background: #eaeaea; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #d4d4d4; }
+        
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- App Container -->
+    <div id="app" class="flex-grow w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex flex-col fade-in">
+        <!-- Content injected via JS -->
+    </div>
+
+    <script>
+        // --- 1. DATA & CONFIGURATION ---
+
+        // The 10 Level Progression System
+        const levels = [
+            { id: 1, time: 3, push: 2, pull: 1, legs: 10, cardio: { run: "100m", steps: "150" } },
+            { id: 2, time: 4, push: 5, pull: 2, legs: 20, cardio: { run: "200m", steps: "300" } },
+            { id: 3, time: 4, push: 10, pull: 4, legs: 35, cardio: { run: "400m", steps: "500" } },
+            { id: 4, time: 5, push: 20, pull: 8, legs: 50, cardio: { run: "600m", steps: "800" } },
+            { id: 5, time: 6, push: 35, pull: 12, legs: 75, cardio: { run: "800m", steps: "1200" } },
+            { id: 6, time: 7, push: 50, pull: 18, legs: 100, cardio: { run: "1km", steps: "1500" } },
+            { id: 7, time: 8, push: 75, pull: 25, legs: 130, cardio: { run: "1.2km", steps: "1800" } },
+            { id: 8, time: 8, push: 100, pull: 35, legs: 160, cardio: { run: "1.5km", steps: "2200" } },
+            { id: 9, time: 9, push: 150, pull: 40, legs: 200, cardio: { run: "2km", steps: "3000" } },
+            { id: 10, time: 10, push: 200, pull: 50, legs: 250, cardio: { run: "2.5km", steps: "3750" } }
+        ];
+
+        const exerciseNames = {
+            push: { standard: "Pushups", easy: "Knee / Wall Pushups" },
+            pull: { standard: "Pullups", easy: "Bodyweight Rows / Band Pulls" },
+            legs: { standard: "Squats", easy: "Assisted Squats" },
+            cardio: { run: "Running", steps: "Steps / Brisk Walk" }
+        };
+
+        // Sync-friendly Data Structure
+        let defaultState = {
+            isSetupComplete: false,
+            profile: {
+                name: '',
+                age: '',
+                bodyType: 'Type M', // M, F, O
+                preferences: {
+                    push: 'standard',
+                    pull: 'standard',
+                    legs: 'standard',
+                    cardio: 'run'
+                },
+                createdAt: new Date().toISOString()
+            },
+            progress: {
+                currentLevel: 1,
+                levelCompletion: {
+                    push: false,
+                    pull: false,
+                    legs: false,
+                    cardio: false
+                }
+            },
+            history: [] // Array of { date: 'YYYY-MM-DD', completed: ['push', 'legs'], levelAtTime: 1 }
+        };
+
+        let appState = null;
+
+        // --- 2. CORE FUNCTIONS ---
+
+        function init() {
+            const savedData = localStorage.getItem('persistAntData') || localStorage.getItem('zenithFitnessData');
+            if (savedData) {
+                try {
+                    appState = JSON.parse(savedData);
+                } catch (e) {
+                    console.error("Failed to parse data", e);
+                    appState = JSON.parse(JSON.stringify(defaultState));
+                }
+            } else {
+                appState = JSON.parse(JSON.stringify(defaultState));
+            }
+            render();
+        }
+
+        function saveState() {
+            localStorage.setItem('persistAntData', JSON.stringify(appState));
+        }
+
+        function getTodayString() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        function toggleActivity(activityKey) {
+            const isCurrentlyDone = appState.progress.levelCompletion[activityKey];
+            appState.progress.levelCompletion[activityKey] = !isCurrentlyDone;
+            
+            // Log to history
+            const today = getTodayString();
+            let todayLog = appState.history.find(h => h.date === today);
+            
+            if (!todayLog) {
+                todayLog = { date: today, completed: [], levelAtTime: appState.progress.currentLevel };
+                appState.history.push(todayLog);
+            }
+            
+            if (!isCurrentlyDone) {
+                // Activity marked as complete
+                if (!todayLog.completed.includes(activityKey)) {
+                    todayLog.completed.push(activityKey);
+                }
+            } else {
+                // Activity un-marked (undo)
+                todayLog.completed = todayLog.completed.filter(k => k !== activityKey);
+            }
+
+            saveState();
+            render();
+        }
+
+        function advanceLevel() {
+            if (appState.progress.currentLevel < 10) {
+                appState.progress.currentLevel++;
+                // Reset completion for new level
+                appState.progress.levelCompletion = { push: false, pull: false, legs: false, cardio: false };
+                saveState();
+                render();
+            }
+        }
+
+        // --- 3. UI RENDERING ---
+
+        function render() {
+            const appDiv = document.getElementById('app');
+            appDiv.innerHTML = ''; // Clear current view
+            
+            if (!appState.isSetupComplete) {
+                appDiv.innerHTML = renderOnboarding();
+            } else {
+                appDiv.innerHTML = renderDashboard();
+            }
+            lucide.createIcons();
+            attachEventListeners();
+        }
+
+        function renderOnboarding() {
+            return `
+                <div class="max-w-xl mx-auto w-full mt-10">
+                    <div class="text-center mb-10">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-16 h-16 mx-auto mb-4 text-gray-900">
+                            <g transform="rotate(-15 12 12)">
+                                <!-- Head -->
+                                <circle cx="17" cy="12" r="2.5"/>
+                                <!-- Thorax -->
+                                <ellipse cx="11.5" cy="12" rx="2.5" ry="1.5"/>
+                                <!-- Abdomen -->
+                                <ellipse cx="5" cy="12" rx="3.5" ry="2.5"/>
+                                <!-- Antennae -->
+                                <path d="M18.5 10 L21 7 M18.5 14 L21 17"/>
+                                <!-- Front Legs -->
+                                <path d="M12.5 10.5 L14 7 L16 6 M12.5 13.5 L14 17 L16 18"/>
+                                <!-- Mid Legs -->
+                                <path d="M10.5 10.5 L10 7 L8 6 M10.5 13.5 L10 17 L8 18"/>
+                                <!-- Back Legs -->
+                                <path d="M7 10 L6 6 L4 5 M7 14 L6 18 L4 19"/>
+                            </g>
+                        </svg>
+                        <h1 class="text-3xl font-light tracking-tight text-gray-900 mb-2">PersistAnt</h1>
+                        <p class="text-gray-500 font-medium">Your Personal Persistent Assistant.</p>
+                        <p class="text-gray-400 text-sm mt-1">A simple, progressive path to physical mastery.</p>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+                        
+                        <div class="mb-6 pb-6 border-b border-gray-100">
+                            <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Important Notice</h2>
+                            <p class="text-sm text-gray-600 flex items-start gap-2">
+                                <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                                <span>Your progress is stored securely on this device's browser. <strong class="font-medium text-gray-900">Clearing your browser cache may erase this data.</strong> Cloud sync capabilities are planned for future updates.</span>
+                            </p>
+                        </div>
+
+                        <form id="setupForm" class="space-y-6">
+                            <!-- Profile -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                                    <input type="text" id="inpName" required class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition-all" placeholder="How should we call you?">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Age</label>
+                                    <input type="number" id="inpAge" required min="10" max="120" class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 outline-none transition-all" placeholder="e.g. 28">
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Body Type</label>
+                                <select id="inpBodyType" class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 outline-none bg-white">
+                                    <option value="Type M">Type M (Masculine structure)</option>
+                                    <option value="Type F">Type F (Feminine structure)</option>
+                                    <option value="Type O">Type O (Other / Neutral)</option>
+                                </select>
+                            </div>
+
+                            <hr class="border-gray-100 my-8">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">Exercise Preferences</h3>
+                            <p class="text-sm text-gray-500 mb-6">Choose variations that suit your current fitness level. You can adapt these later.</p>
+
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Push Strength</label>
+                                    <select id="prefPush" class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 outline-none bg-white">
+                                        <option value="standard">Standard Pushups</option>
+                                        <option value="easy">Knee / Wall Pushups (Easier)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Pull Strength</label>
+                                    <select id="prefPull" class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 outline-none bg-white">
+                                        <option value="standard">Standard Pullups</option>
+                                        <option value="easy">Bodyweight Rows / Band Pulls (Easier)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Cardio Style</label>
+                                    <select id="prefCardio" class="w-full border-gray-300 border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-gray-900 outline-none bg-white">
+                                        <option value="run">Running</option>
+                                        <option value="steps">Steps / Brisk Walking</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="w-full mt-8 bg-gray-900 text-white font-medium rounded-lg px-4 py-3 hover:bg-gray-800 transition-colors flex items-center justify-center gap-2">
+                                Begin Journey <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const currentLevelData = levels[appState.progress.currentLevel - 1];
+            const comp = appState.progress.levelCompletion;
+            const completedCount = Object.values(comp).filter(Boolean).length;
+            const isMaxLevel = appState.progress.currentLevel === 10 && completedCount === 4;
+
+            // Prepare activity cards
+            const activities = [
+                { 
+                    key: 'push', 
+                    icon: 'arrow-up-circle', 
+                    title: 'Push Strength', 
+                    name: exerciseNames.push[appState.profile.preferences.push],
+                    target: `${currentLevelData.push} reps`,
+                    isDone: comp.push
+                },
+                { 
+                    key: 'pull', 
+                    icon: 'arrow-down-circle', 
+                    title: 'Pull Strength', 
+                    name: exerciseNames.pull[appState.profile.preferences.pull],
+                    target: `${currentLevelData.pull} reps`,
+                    isDone: comp.pull
+                },
+                { 
+                    key: 'legs', 
+                    icon: 'activity', 
+                    title: 'Leg Strength', 
+                    name: exerciseNames.legs[appState.profile.preferences.legs],
+                    target: `${currentLevelData.legs} reps`,
+                    isDone: comp.legs
+                },
+                { 
+                    key: 'cardio', 
+                    icon: 'footprints', 
+                    title: 'Cardio Base', 
+                    name: exerciseNames.cardio[appState.profile.preferences.cardio],
+                    target: currentLevelData.cardio[appState.profile.preferences.cardio],
+                    isDone: comp.cardio
+                }
+            ];
+
+            let cardsHtml = activities.map(act => `
+                <div class="relative bg-white border ${act.isDone ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200'} rounded-2xl p-6 transition-all duration-300 hover:shadow-md flex flex-col justify-between group">
+                    ${act.isDone ? '<div class="absolute top-4 right-4 text-emerald-500"><i data-lucide="check-circle-2" class="w-6 h-6"></i></div>' : ''}
+                    <div>
+                        <div class="w-10 h-10 rounded-full ${act.isDone ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-600'} flex items-center justify-center mb-4">
+                            <i data-lucide="${act.icon}" class="w-5 h-5"></i>
+                        </div>
+                        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">${act.title}</h3>
+                        <p class="text-lg font-medium text-gray-900 mt-1 mb-1">${act.name}</p>
+                        <p class="text-3xl font-light tracking-tight ${act.isDone ? 'text-emerald-700' : 'text-gray-900'}">${act.target}</p>
+                    </div>
+                    
+                    <div class="mt-8">
+                        <button onclick="toggleActivity('${act.key}')" class="w-full py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all ${act.isDone ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 group/btn' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'} border text-sm font-medium">
+                            ${act.isDone 
+                                ? `<span class="group-hover/btn:hidden flex items-center gap-2"><i data-lucide="check-circle-2" class="w-4 h-4"></i> Completed</span>
+                                   <span class="hidden group-hover/btn:flex items-center gap-2"><i data-lucide="x-circle" class="w-4 h-4"></i> Undo</span>`
+                                : `Mark as Done <i data-lucide="check" class="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"></i>`
+                            }
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            return `
+                <!-- Header -->
+                <header class="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-4">
+                    <div>
+                        <p class="text-gray-500 font-medium tracking-wide text-sm uppercase mb-1">Daily Discipline</p>
+                        <h1 class="text-3xl font-light text-gray-900 tracking-tight">Keep going, ${appState.profile.name}.</h1>
+                    </div>
+                    <div class="text-left md:text-right">
+                        <div class="inline-block bg-gray-900 text-white text-sm font-medium px-4 py-1.5 rounded-full mb-2 shadow-sm">
+                            Level ${appState.progress.currentLevel}
+                        </div>
+                        <p class="text-sm text-gray-500">Target Time: ~${currentLevelData.time} mins per activity</p>
+                    </div>
+                </header>
+
+                <!-- Progress Tracker -->
+                <div class="mb-8">
+                    <div class="flex justify-between text-sm font-medium mb-2">
+                        <span class="text-gray-700">Level Progress</span>
+                        <span class="text-gray-500">${completedCount} of 4 Mastered</span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div class="bg-gray-900 h-2 rounded-full transition-all duration-700 ease-out" style="width: ${(completedCount / 4) * 100}%"></div>
+                    </div>
+                    ${completedCount === 4 && !isMaxLevel ? `
+                        <div class="mt-4 p-4 bg-gray-900 text-white rounded-xl flex items-center justify-between shadow-lg fade-in">
+                            <p class="text-sm font-medium flex items-center gap-2"><i data-lucide="sparkles" class="w-4 h-4 text-yellow-400"></i> Level Mastered!</p>
+                            <button onclick="advanceLevel()" class="px-4 py-2 bg-white text-gray-900 rounded-lg text-sm font-bold hover:bg-gray-100 transition-colors">Advance to Level ${appState.progress.currentLevel + 1}</button>
+                        </div>
+                    ` : ''}
+                    ${isMaxLevel ? '<p class="text-sm text-amber-600 mt-3 font-medium flex items-center gap-1"><i data-lucide="crown" class="w-4 h-4"></i> Pinnacle Reached. Maintain this standard daily.</p>' : ''}
+                </div>
+
+                <!-- Activity Cards Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-12">
+                    ${cardsHtml}
+                </div>
+
+                <!-- Footer & Info -->
+                <footer class="mt-auto border-t border-gray-100 pt-8 flex flex-col items-center text-center">
+                    <p class="text-sm text-gray-400 max-w-lg mb-2">"Small disciplines repeated with consistency every day lead to great achievements gained slowly over time."</p>
+                    <p class="text-xs text-gray-400 flex items-center gap-1 mt-4">
+                        <i data-lucide="hard-drive" class="w-3 h-3"></i> Data securely stored locally on this browser.
+                    </p>
+                </footer>
+            `;
+        }
+
+        // --- 4. EVENT LISTENERS & LOGIC ---
+
+        function attachEventListeners() {
+            const setupForm = document.getElementById('setupForm');
+            if (setupForm) {
+                setupForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    appState.profile.name = document.getElementById('inpName').value;
+                    appState.profile.age = document.getElementById('inpAge').value;
+                    appState.profile.bodyType = document.getElementById('inpBodyType').value;
+                    appState.profile.preferences.push = document.getElementById('prefPush').value;
+                    appState.profile.preferences.pull = document.getElementById('prefPull').value;
+                    appState.profile.preferences.cardio = document.getElementById('prefCardio').value;
+                    
+                    appState.isSetupComplete = true;
+                    saveState();
+                    render();
+                });
+            }
+        }
+
+        // Initialize App on Load
+        document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
